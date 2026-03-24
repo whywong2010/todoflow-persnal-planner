@@ -30,12 +30,20 @@ export default function Home() {
             <p className="text-sm font-semibold tracking-[0.18em] text-emerald-200">
               TODOFLOW
             </p>
-            <Link
-              href="/dashboard"
-              className="rounded-lg border border-emerald-300/40 px-3 py-1.5 text-sm text-emerald-100 transition hover:bg-emerald-500/20"
-            >
-              進入任務面板
-            </Link>
+            <div className="flex items-center gap-2">
+              <Link
+                href="/diagnosis"
+                className="rounded-lg border border-amber-200/45 bg-amber-300/15 px-3 py-1.5 text-sm text-amber-100 transition hover:bg-amber-300/25"
+              >
+                今日逆襲診斷
+              </Link>
+              <Link
+                href="/dashboard"
+                className="rounded-lg border border-emerald-300/40 px-3 py-1.5 text-sm text-emerald-100 transition hover:bg-emerald-500/20"
+              >
+                進入任務面板
+              </Link>
+            </div>
           </div>
         </header>
 
@@ -52,6 +60,9 @@ export default function Home() {
             <p className="mt-4 max-w-xl text-sm text-emerald-100/85 md:text-base">
               TodoFlow 把待辦與日曆結合，讓你在「日期、優先級、完成狀態」之間快速切換，專注真正要完成的工作。
             </p>
+            <p className="mt-2 max-w-xl text-sm text-amber-100/90">
+              新增「今日逆襲診斷」：6 題生成你的行動策略卡，一鍵分享給朋友一起測。
+            </p>
 
             <div className="mt-6 flex flex-wrap gap-3">
               <Link
@@ -59,6 +70,12 @@ export default function Home() {
                 className="rounded-xl bg-amber-300 px-4 py-2 text-sm font-semibold text-emerald-950 transition hover:bg-amber-200"
               >
                 立即開始
+              </Link>
+              <Link
+                href="/diagnosis"
+                className="rounded-xl border border-amber-200/45 px-4 py-2 text-sm text-amber-100 transition hover:bg-amber-300/15"
+              >
+                先做 3 分鐘診斷
               </Link>
               <a
                 href="#features"
