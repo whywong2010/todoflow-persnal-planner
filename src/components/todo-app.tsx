@@ -38,6 +38,12 @@ interface TodoDraft {
   priority: TodoPriority;
 }
 
+interface ReminderPopup {
+  key: string;
+  title: string;
+  dueAt: string;
+}
+
 function cn(...classNames: Array<string | false | null | undefined>): string {
   return classNames.filter(Boolean).join(" ");
 }
@@ -147,6 +153,7 @@ export function TodoApp() {
   const [draft, setDraft] = useState<TodoDraft>(() => startDraft(todayKey()));
   const [permission, setPermission] =
     useState<NotificationPermission>("default");
+  const [reminderPopups, setReminderPopups] = useState<ReminderPopup[]>([]);
   const reminderKeysRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
@@ -182,7 +189,6 @@ export function TodoApp() {
   useEffect(() => {
     if (
       !hydrated ||
-      permission !== "granted" ||
       typeof window === "undefined" ||
       !("Notification" in window)
     ) {
@@ -214,15 +220,28 @@ export function TodoApp() {
           continue;
         }
 
+        setReminderPopups((current) => {
+          if (current.some((popup) => popup.key === reminderKey)) {
+            return current;
+          }
+          return [
+            ...current,
+            { key: reminderKey, title: todo.title, dueAt: todo.dueAt },
+          ];
+        });
+
         try {
-          new Notification(`任務即將到期：${todo.title}`, {
-            body: `截止時間 ${toDueLabel(todo.dueAt)}（提前 ${REMINDER_WINDOW_MINUTES} 分鐘提醒）`,
-          });
-          reminderKeysRef.current.add(reminderKey);
-          changed = true;
+          if (permission === "granted") {
+            new Notification(`任務即將到期：${todo.title}`, {
+              body: `截止時間 ${toDueLabel(todo.dueAt)}（提前 ${REMINDER_WINDOW_MINUTES} 分鐘提醒）`,
+            });
+          }
         } catch {
-          return;
+          // Ignore browser notification errors and still keep in-app popups.
         }
+
+        reminderKeysRef.current.add(reminderKey);
+        changed = true;
       }
 
       if (changed) {
@@ -234,6 +253,10 @@ export function TodoApp() {
     const timer = window.setInterval(checkReminders, 30_000);
     return () => window.clearInterval(timer);
   }, [hydrated, permission, todos]);
+
+  function dismissReminderPopup(key: string): void {
+    setReminderPopups((current) => current.filter((popup) => popup.key !== key));
+  }
 
   const filteredTodos = useMemo(() => {
     const loweredQuery = filters.query.trim().toLowerCase();
@@ -405,6 +428,29 @@ export function TodoApp() {
 
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(56,189,248,0.12),transparent_30%),radial-gradient(circle_at_bottom_right,rgba(52,211,153,0.12),transparent_35%),#020617] px-4 py-6 text-slate-100 md:px-8 md:py-10">
+      {reminderPopups.length > 0 ? (
+        <div className="fixed right-4 top-4 z-50 w-[min(92vw,360px)] space-y-2">
+          {reminderPopups.map((popup) => (
+            <article
+              key={popup.key}
+              className="rounded-xl border border-amber-300/40 bg-slate-950/95 p-3 shadow-xl"
+            >
+              <p className="text-xs tracking-[0.12em] text-amber-200">提醒</p>
+              <p className="mt-1 text-sm font-semibold text-white">{popup.title}</p>
+              <p className="mt-1 text-xs text-slate-300">
+                截止 {toDueLabel(popup.dueAt)}（提前 {REMINDER_WINDOW_MINUTES} 分鐘）
+              </p>
+              <button
+                type="button"
+                onClick={() => dismissReminderPopup(popup.key)}
+                className="mt-2 rounded-lg border border-white/20 px-2.5 py-1 text-xs text-slate-200 transition hover:bg-white/10"
+              >
+                知道了
+              </button>
+            </article>
+          ))}
+        </div>
+      ) : null}
       <div className="mx-auto grid w-full max-w-7xl gap-6 lg:grid-cols-[1.3fr_1fr]">
         <section className="rounded-2xl border border-white/10 bg-slate-900/70 p-5 shadow-[0_16px_60px_-20px_rgba(2,132,199,0.5)] backdrop-blur-sm md:p-6">
           <header className="mb-5 flex flex-wrap items-start justify-between gap-4">
