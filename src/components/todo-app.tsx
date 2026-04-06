@@ -154,6 +154,7 @@ export function TodoApp() {
   const [draft, setDraft] = useState<TodoDraft>(() => startDraft(todayKey()));
   const [permission, setPermission] =
     useState<NotificationPermission>("default");
+  const [soundEnabled, setSoundEnabled] = useState(true);
   const [reminderPopups, setReminderPopups] = useState<ReminderPopup[]>([]);
   const reminderKeysRef = useRef<Set<string>>(new Set());
 
@@ -172,6 +173,13 @@ export function TodoApp() {
         setPermission(Notification.permission);
       }
 
+      if (typeof window !== "undefined") {
+        const saved = window.localStorage.getItem("todo-next:v1:sound-enabled");
+        if (saved !== null) {
+          setSoundEnabled(saved === "1");
+        }
+      }
+
       setHydrated(true);
     });
 
@@ -186,6 +194,16 @@ export function TodoApp() {
     }
     saveTodos(todos);
   }, [hydrated, todos]);
+
+  useEffect(() => {
+    if (!hydrated || typeof window === "undefined") {
+      return;
+    }
+    window.localStorage.setItem(
+      "todo-next:v1:sound-enabled",
+      soundEnabled ? "1" : "0",
+    );
+  }, [hydrated, soundEnabled]);
 
   useEffect(() => {
     if (!hydrated || typeof window === "undefined") {
@@ -245,6 +263,10 @@ export function TodoApp() {
           // Ignore browser notification errors and still keep in-app popups.
         }
 
+        if (soundEnabled) {
+          playReminderTone();
+        }
+
         reminderKeysRef.current.add(reminderKey);
         changed = true;
       }
@@ -261,6 +283,49 @@ export function TodoApp() {
 
   function dismissReminderPopup(key: string): void {
     setReminderPopups((current) => current.filter((popup) => popup.key !== key));
+  }
+
+  function playReminderTone(): void {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const audioContextClass =
+      window.AudioContext ||
+      (window as unknown as { webkitAudioContext?: typeof AudioContext })
+        .webkitAudioContext;
+    if (!audioContextClass) {
+      return;
+    }
+
+    try {
+      const context = new audioContextClass();
+      const now = context.currentTime;
+      const beepPattern = [0, 0.22];
+
+      for (const offset of beepPattern) {
+        const oscillator = context.createOscillator();
+        const gainNode = context.createGain();
+        oscillator.type = "sine";
+        oscillator.frequency.setValueAtTime(880, now + offset);
+
+        gainNode.gain.setValueAtTime(0.0001, now + offset);
+        gainNode.gain.exponentialRampToValueAtTime(0.08, now + offset + 0.01);
+        gainNode.gain.exponentialRampToValueAtTime(
+          0.0001,
+          now + offset + 0.16,
+        );
+
+        oscillator.connect(gainNode);
+        gainNode.connect(context.destination);
+        oscillator.start(now + offset);
+        oscillator.stop(now + offset + 0.18);
+      }
+
+      window.setTimeout(() => void context.close(), 900);
+    } catch {
+      // Ignore audio runtime errors.
+    }
   }
 
   const filteredTodos = useMemo(() => {
@@ -471,17 +536,26 @@ export function TodoApp() {
               </p>
             </div>
 
-            <button
-              type="button"
-              onClick={requestNotificationPermission}
-              className="rounded-xl border border-sky-400/40 bg-sky-500/10 px-3 py-2 text-sm text-sky-100 transition hover:bg-sky-500/20"
-            >
-              {permission === "granted"
-                ? "提醒已啟用"
-                : permission === "denied"
-                  ? "提醒被封鎖"
-                  : "啟用提醒"}
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={requestNotificationPermission}
+                className="rounded-xl border border-sky-400/40 bg-sky-500/10 px-3 py-2 text-sm text-sky-100 transition hover:bg-sky-500/20"
+              >
+                {permission === "granted"
+                  ? "提醒已啟用"
+                  : permission === "denied"
+                    ? "提醒被封鎖"
+                    : "啟用提醒"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setSoundEnabled((current) => !current)}
+                className="rounded-xl border border-teal-400/40 bg-teal-500/10 px-3 py-2 text-sm text-teal-100 transition hover:bg-teal-500/20"
+              >
+                {soundEnabled ? "聲音已開啟" : "聲音已關閉"}
+              </button>
+            </div>
           </header>
 
           <div className="mb-5 grid gap-3 sm:grid-cols-3">
