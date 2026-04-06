@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import {
   loadReminderState,
   loadTodos,
@@ -557,6 +558,12 @@ export function TodoApp() {
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
+              <Link
+                href="/"
+                className="rounded-xl border border-white/25 bg-white/5 px-3 py-2 text-sm text-white transition hover:bg-white/10"
+              >
+                回主頁
+              </Link>
               <button
                 type="button"
                 onClick={requestNotificationPermission}
