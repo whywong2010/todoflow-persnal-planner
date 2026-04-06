@@ -2,15 +2,16 @@
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
-  loadReminderKeys,
+  loadReminderState,
   loadTodos,
-  saveReminderKeys,
+  saveReminderState,
   saveTodos,
 } from "@/lib/todo-storage";
 import type { Todo, TodoFilters, TodoPriority } from "@/types/todo";
 
 const REMINDER_WINDOW_MINUTES = 30;
 const REMINDER_GRACE_MINUTES = 10;
+const REMINDER_REPEAT_MINUTES = 5;
 
 const PRIORITY_LABEL: Record<TodoPriority, string> = {
   low: "低",
@@ -40,9 +41,10 @@ interface TodoDraft {
 }
 
 interface ReminderPopup {
-  key: string;
+  id: string;
   title: string;
   dueAt: string;
+  isOverdue: boolean;
 }
 
 function cn(...classNames: Array<string | false | null | undefined>): string {
@@ -156,7 +158,7 @@ export function TodoApp() {
     useState<NotificationPermission>("default");
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [reminderPopups, setReminderPopups] = useState<ReminderPopup[]>([]);
-  const reminderKeysRef = useRef<Set<string>>(new Set());
+  const reminderStateRef = useRef<Map<string, number>>(new Map());
 
   useEffect(() => {
     let cancelled = false;
@@ -167,7 +169,7 @@ export function TodoApp() {
       }
 
       setTodos(loadTodos());
-      reminderKeysRef.current = new Set(loadReminderKeys());
+      reminderStateRef.current = new Map(Object.entries(loadReminderState()));
 
       if (typeof window !== "undefined" && "Notification" in window) {
         setPermission(Notification.permission);
@@ -214,7 +216,9 @@ export function TodoApp() {
       const nowMs = Date.now();
       const windowMs = REMINDER_WINDOW_MINUTES * 60 * 1000;
       const graceMs = REMINDER_GRACE_MINUTES * 60 * 1000;
+      const repeatMs = REMINDER_REPEAT_MINUTES * 60 * 1000;
       let changed = false;
+      const activeKeys = new Set<string>();
 
       for (const todo of todos) {
         if (todo.status === "done") {
@@ -232,30 +236,36 @@ export function TodoApp() {
         }
 
         const reminderKey = `${todo.id}:${todo.dueAt}`;
-        if (reminderKeysRef.current.has(reminderKey)) {
+        activeKeys.add(reminderKey);
+
+        const lastNotifiedAt = reminderStateRef.current.get(reminderKey);
+        if (
+          typeof lastNotifiedAt === "number" &&
+          nowMs - lastNotifiedAt < repeatMs
+        ) {
           continue;
         }
 
-        setReminderPopups((current) => {
-          if (current.some((popup) => popup.key === reminderKey)) {
-            return current;
-          }
-          return [
-            ...current,
-            { key: reminderKey, title: todo.title, dueAt: todo.dueAt },
-          ];
-        });
+        const isOverdue = untilDue <= 0;
+        setReminderPopups((current) => [
+          ...current,
+          {
+            id: `${reminderKey}:${nowMs}`,
+            title: todo.title,
+            dueAt: todo.dueAt,
+            isOverdue,
+          },
+        ]);
 
         try {
           const supportsNotification = "Notification" in window;
           if (supportsNotification && permission === "granted") {
-            const isOverdue = untilDue <= 0;
             new Notification(
               isOverdue ? `任務已到期：${todo.title}` : `任務即將到期：${todo.title}`,
               {
                 body: isOverdue
                   ? `截止時間 ${toDueLabel(todo.dueAt)}（已超過）`
-                  : `截止時間 ${toDueLabel(todo.dueAt)}（提前 ${REMINDER_WINDOW_MINUTES} 分鐘提醒）`,
+                  : `截止時間 ${toDueLabel(todo.dueAt)}（提前 ${REMINDER_WINDOW_MINUTES} 分鐘，每 ${REMINDER_REPEAT_MINUTES} 分鐘提醒）`,
               },
             );
           }
@@ -267,22 +277,29 @@ export function TodoApp() {
           playReminderTone();
         }
 
-        reminderKeysRef.current.add(reminderKey);
+        reminderStateRef.current.set(reminderKey, nowMs);
         changed = true;
       }
 
+      for (const key of Array.from(reminderStateRef.current.keys())) {
+        if (!activeKeys.has(key)) {
+          reminderStateRef.current.delete(key);
+          changed = true;
+        }
+      }
+
       if (changed) {
-        saveReminderKeys([...reminderKeysRef.current]);
+        saveReminderState(Object.fromEntries(reminderStateRef.current));
       }
     };
 
     checkReminders();
     const timer = window.setInterval(checkReminders, 30_000);
     return () => window.clearInterval(timer);
-  }, [hydrated, permission, todos]);
+  }, [hydrated, permission, soundEnabled, todos]);
 
-  function dismissReminderPopup(key: string): void {
-    setReminderPopups((current) => current.filter((popup) => popup.key !== key));
+  function dismissReminderPopup(id: string): void {
+    setReminderPopups((current) => current.filter((popup) => popup.id !== id));
   }
 
   function playReminderTone(): void {
@@ -502,17 +519,20 @@ export function TodoApp() {
         <div className="fixed right-4 top-4 z-50 w-[min(92vw,360px)] space-y-2">
           {reminderPopups.map((popup) => (
             <article
-              key={popup.key}
+              key={popup.id}
               className="rounded-xl border border-amber-300/40 bg-slate-950/95 p-3 shadow-xl"
             >
               <p className="text-xs tracking-[0.12em] text-amber-200">提醒</p>
               <p className="mt-1 text-sm font-semibold text-white">{popup.title}</p>
               <p className="mt-1 text-xs text-slate-300">
-                截止 {toDueLabel(popup.dueAt)}（提前 {REMINDER_WINDOW_MINUTES} 分鐘）
+                截止 {toDueLabel(popup.dueAt)}
+                {popup.isOverdue
+                  ? `（已到期，每 ${REMINDER_REPEAT_MINUTES} 分鐘提醒）`
+                  : `（提前 ${REMINDER_WINDOW_MINUTES} 分鐘，每 ${REMINDER_REPEAT_MINUTES} 分鐘提醒）`}
               </p>
               <button
                 type="button"
-                onClick={() => dismissReminderPopup(popup.key)}
+                onClick={() => dismissReminderPopup(popup.id)}
                 className="mt-2 rounded-lg border border-white/20 px-2.5 py-1 text-xs text-slate-200 transition hover:bg-white/10"
               >
                 知道了
