@@ -10,6 +10,7 @@ import {
 import type { Todo, TodoFilters, TodoPriority } from "@/types/todo";
 
 const REMINDER_WINDOW_MINUTES = 30;
+const REMINDER_GRACE_MINUTES = 10;
 
 const PRIORITY_LABEL: Record<TodoPriority, string> = {
   low: "低",
@@ -187,17 +188,14 @@ export function TodoApp() {
   }, [hydrated, todos]);
 
   useEffect(() => {
-    if (
-      !hydrated ||
-      typeof window === "undefined" ||
-      !("Notification" in window)
-    ) {
+    if (!hydrated || typeof window === "undefined") {
       return;
     }
 
     const checkReminders = (): void => {
       const nowMs = Date.now();
       const windowMs = REMINDER_WINDOW_MINUTES * 60 * 1000;
+      const graceMs = REMINDER_GRACE_MINUTES * 60 * 1000;
       let changed = false;
 
       for (const todo of todos) {
@@ -211,7 +209,7 @@ export function TodoApp() {
         }
 
         const untilDue = dueMs - nowMs;
-        if (untilDue <= 0 || untilDue > windowMs) {
+        if (untilDue > windowMs || untilDue < -graceMs) {
           continue;
         }
 
@@ -231,10 +229,17 @@ export function TodoApp() {
         });
 
         try {
-          if (permission === "granted") {
-            new Notification(`任務即將到期：${todo.title}`, {
-              body: `截止時間 ${toDueLabel(todo.dueAt)}（提前 ${REMINDER_WINDOW_MINUTES} 分鐘提醒）`,
-            });
+          const supportsNotification = "Notification" in window;
+          if (supportsNotification && permission === "granted") {
+            const isOverdue = untilDue <= 0;
+            new Notification(
+              isOverdue ? `任務已到期：${todo.title}` : `任務即將到期：${todo.title}`,
+              {
+                body: isOverdue
+                  ? `截止時間 ${toDueLabel(todo.dueAt)}（已超過）`
+                  : `截止時間 ${toDueLabel(todo.dueAt)}（提前 ${REMINDER_WINDOW_MINUTES} 分鐘提醒）`,
+              },
+            );
           }
         } catch {
           // Ignore browser notification errors and still keep in-app popups.
